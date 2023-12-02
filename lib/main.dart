@@ -3,7 +3,6 @@ import 'package:syncfusion_flutter_gauges/gauges.dart';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_browser_client.dart';
 import 'package:flutter_joystick/flutter_joystick.dart';
-import 'dart:convert';
 import 'package:typed_data/typed_buffers.dart';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
