@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
-import 'package:webrobot/websockets.dart';
+import 'package:mqtt_client/mqtt_client.dart';
+import 'package:mqtt_client/mqtt_browser_client.dart';
 import 'package:flutter_joystick/flutter_joystick.dart';
 import 'dart:convert';
+import 'package:typed_data/typed_buffers.dart';
 import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 
 void main() {
   runApp(const MyApp());
@@ -55,6 +58,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   double _robotSpeed = 50.0;
 
+  final ValueNotifier<Image?> _imageNotifier = ValueNotifier<Image?>(null);
+
   @override
   void didChangeDependencies() {
     _x = MediaQuery.of(context).size.width / 2 - ballSize / 2;
@@ -63,21 +68,84 @@ class _MyHomePageState extends State<MyHomePage> {
 
   bool _camLight = false;
   int _counter = 0;
-  final WebSocket _socket = WebSocket("ws://localhost:5000");
+  final MqttBrowserClient _client =
+      MqttBrowserClient('ws://103.84.207.210:8083/mqtt', '');
   bool _isConnected = false;
-  
-  void connect(BuildContext context) async {
-    _socket.connect();
+
+  void connect() async {
+    await mqttConnect(
+        "mqqt-" + DateTime.now().millisecondsSinceEpoch.toString());
+    print('Connection status: $_isConnected');
     setState(() {
       _isConnected = true;
     });
   }
 
   void disconnect() {
-    _socket.disconnect();
+    _client.disconnect();
     setState(() {
       _isConnected = false;
     });
+    print('Disconnected');
+  }
+
+  Future<bool> mqttConnect(String uniqueId) async {
+    _client.logging(on: false);
+    _client.setProtocolV311();
+    _client.keepAlivePeriod = 20;
+    _client.connectTimeoutPeriod = 2000;
+    _client.port = 8083;
+    _client.onDisconnected = onDisconnected;
+    _client.onConnected = onConnected;
+    _client.pongCallback = pong;
+
+    final MqttConnectMessage connMess =
+        MqttConnectMessage().withClientIdentifier(uniqueId).startClean();
+    _client.connectionMessage = connMess;
+
+    try {
+      await _client.connect();
+    } catch (e) {
+      print('Exception: $e');
+      _client.disconnect();
+    }
+
+    if (_client.connectionStatus!.state == MqttConnectionState.connected) {
+      print("Connected Successfully!");
+      const topic = 'esp32/cam_0';
+      _client.subscribe(topic, MqttQos.atMostOnce);
+      return true;
+    } else {
+      print(
+          'Connection failed - disconnecting, status is ${_client.connectionStatus}');
+      _client.disconnect();
+      return false;
+    }
+  }
+
+  void onConnected() {
+    print("Client connection was successful");
+  }
+
+  void onDisconnected() {
+    print("Disconnected");
+    _isConnected = false;
+  }
+
+  void pong() {
+    print('Ping response client callback invoked');
+  }
+
+  Future<void> decodeImage(Uint8List message) async {
+    Uint8List list = Uint8List.view(message.buffer);
+    img.Image jpegImage = img.decodeJpg(list) as img.Image;
+    print('img width = ${jpegImage.width}, height = ${jpegImage.height}');
+
+    // Perbarui UI dengan gambar yang sudah siap
+    _imageNotifier.value = Image.memory(
+      img.encodeJpg(jpegImage) as Uint8List,
+      gaplessPlayback: true,
+    );
   }
 
   @override
@@ -296,27 +364,42 @@ class _MyHomePageState extends State<MyHomePage> {
                           color: Colors.blue,
                           child: _isConnected
                               ? StreamBuilder(
-                                  stream: _socket.stream,
+                                  stream: _client.updates,
                                   builder: (context, snapshot) {
                                     if (!snapshot.hasData) {
                                       return const CircularProgressIndicator();
                                     }
-
                                     if (snapshot.connectionState ==
                                         ConnectionState.done) {
                                       return const Center(
                                         child: Text("Connection Closed !"),
                                       );
                                     }
-                                    //? Working for single frames
-                                    return Image.memory(
-                                      Uint8List.fromList(
-                                        base64Decode(
-                                          (snapshot.data.toString()),
-                                        ),
-                                      ),
-                                      gaplessPlayback: true,
-                                      excludeFromSemantics: true,
+                                    final mqttReceivedMessages = snapshot.data
+                                        as List<
+                                            MqttReceivedMessage<MqttMessage?>>?;
+                                    final recMess = mqttReceivedMessages![0]
+                                        .payload as MqttPublishMessage;
+
+// Convert MqttByteBuffer to Uint8List
+                                    // Convert MqttByteBuffer to Uint8List
+                                    // Convert Uint8Buffer to Uint8List
+                                    Uint8Buffer buffer =
+                                        recMess.payload.message;
+                                    Uint8List message = buffer.buffer.asUint8List();
+
+// Separate the image decoding process
+                                    decodeImage(message);
+
+                                    return ValueListenableBuilder<Image?>(
+                                      valueListenable: _imageNotifier,
+                                      builder: (context, image, child) {
+                                        if (image == null) {
+                                          return const CircularProgressIndicator();
+                                        } else {
+                                          return image;
+                                        }
+                                      },
                                     );
                                   },
                                 )
@@ -351,10 +434,9 @@ class _MyHomePageState extends State<MyHomePage> {
                                   activeColor: Colors.blueAccent,
                                   onChanged: (bool value) {
                                     // This is called when the user toggles the switch.
-                                    if(value == true){
-                                      connect(context);
-                                    }
-                                    else{
+                                    if (value == true) {
+                                      connect();
+                                    } else {
                                       disconnect();
                                     }
                                   },
@@ -389,7 +471,6 @@ class _MyHomePageState extends State<MyHomePage> {
                               ],
                             ),
                           ),
-                        
                         ],
                       ),
                       SizedBox(
