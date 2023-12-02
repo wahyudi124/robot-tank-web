@@ -5,6 +5,7 @@ import 'package:mqtt_client/mqtt_browser_client.dart';
 import 'package:flutter_joystick/flutter_joystick.dart';
 import 'package:typed_data/typed_buffers.dart';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:image/image.dart' as img;
 
 void main() {
@@ -50,8 +51,11 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  double _x = 100;
-  double _y = 100;
+  double _x_tank = 100;
+  double _y_tank = 100;
+
+  double _x_cam = 100;
+  double _y_cam = 100;
 
   JoystickMode _joystickMode = JoystickMode.all;
 
@@ -61,7 +65,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void didChangeDependencies() {
-    _x = MediaQuery.of(context).size.width / 2 - ballSize / 2;
+    _x_tank = MediaQuery.of(context).size.width / 2 - ballSize / 2;
+    _x_cam = MediaQuery.of(context).size.width / 2 - ballSize / 2;
     super.didChangeDependencies();
   }
 
@@ -340,9 +345,27 @@ class _MyHomePageState extends State<MyHomePage> {
                             mode: _joystickMode,
                             listener: (details) {
                               setState(() {
-                                _x = _x + step * details.x;
-                                _y = _y + step * details.y;
+                                _x_tank = step * details.x;
+                                _y_tank = step * details.y;
                               });
+                              // Create JSON payload
+                              String jsonString =
+                                  jsonEncode({'x': _x_tank, 'y': _y_tank});
+
+                              // Convert string to Uint8Buffer
+                              final payload = Uint8Buffer();
+                              payload.addAll(utf8.encode(jsonString));
+                              if (_client != null &&
+                                  _client.connectionStatus?.state ==
+                                      MqttConnectionState.connected &&
+                                  payload != null) {
+                                _client.publishMessage(
+                                    '/tank', MqttQos.exactlyOnce, payload);
+                              } else {
+                                print(
+                                    'MQTT client is not connected or payload is null');
+                                // Handle the case where the client is not connected or payload is null
+                              }
                             },
                           ),
                         ),
@@ -385,7 +408,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                     // Convert Uint8Buffer to Uint8List
                                     Uint8Buffer buffer =
                                         recMess.payload.message;
-                                    Uint8List message = buffer.buffer.asUint8List();
+                                    Uint8List message =
+                                        buffer.buffer.asUint8List();
 
 // Separate the image decoding process
                                     decodeImage(message);
@@ -668,9 +692,27 @@ class _MyHomePageState extends State<MyHomePage> {
                             mode: _joystickMode,
                             listener: (details) {
                               setState(() {
-                                _x = _x + step * details.x;
-                                _y = _y + step * details.y;
+                                _x_cam = step * details.x;
+                                _y_cam = step * details.y;
                               });
+                              // Create JSON payload
+                              String jsonString =
+                                  jsonEncode({'x': _x_cam, 'y': _y_cam});
+
+                              // Convert string to Uint8Buffer
+                              final payload = Uint8Buffer();
+                              payload.addAll(utf8.encode(jsonString));
+                              if (_client != null &&
+                                  _client.connectionStatus?.state ==
+                                      MqttConnectionState.connected &&
+                                  payload != null) {
+                                _client.publishMessage(
+                                    '/cam', MqttQos.exactlyOnce, payload);
+                              } else {
+                                print(
+                                    'MQTT client is not connected or payload is null');
+                                // Handle the case where the client is not connected or payload is null
+                              }
                             },
                           ),
                         ),
