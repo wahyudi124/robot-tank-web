@@ -60,6 +60,11 @@ class _MyHomePageState extends State<MyHomePage> {
   JoystickMode _joystickMode = JoystickMode.all;
 
   double _robotSpeed = 50.0;
+  double _camSpeed = 15.0;
+
+  double _temperatureValue = 0;
+
+  double _gassValue = 200;
 
   final ValueNotifier<Image?> _imageNotifier = ValueNotifier<Image?>(null);
 
@@ -114,10 +119,36 @@ class _MyHomePageState extends State<MyHomePage> {
       _client.disconnect();
     }
 
+    _client.updates?.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+      final MqttPublishMessage recMess = c[0].payload as MqttPublishMessage;
+      final String pt =
+          MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+
+      print('Received message:$pt from topic: ${c[0].topic}>');
+
+      // Check if the topic is "sensor"
+      if (c[0].topic == '/sensor') {
+        try {
+          // Parse the payload
+          final payload = jsonDecode(pt);
+
+          // Update _temperatureValue and _gassValue
+          setState(() {
+            _temperatureValue = payload['temperature'];
+            _gassValue = payload['gass'];
+          });
+        } catch (e) {
+          print('Error processing message: $e');
+        }
+      }
+    });
+
     if (_client.connectionStatus!.state == MqttConnectionState.connected) {
       print("Connected Successfully!");
       const topic = 'esp32/cam_0';
+      const topic2 = '/sensor';
       _client.subscribe(topic, MqttQos.atMostOnce);
+      _client.subscribe(topic2, MqttQos.atMostOnce);
       return true;
     } else {
       print(
@@ -187,7 +218,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                 showLabels: false,
                                 showTicks: false,
                                 radiusFactor: 0.8,
-                                maximum: 240,
+                                maximum: 50,
                                 axisLineStyle: const AxisLineStyle(
                                     cornerStyle: CornerStyle.startCurve,
                                     thickness: 5),
@@ -197,7 +228,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       widget: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: <Widget>[
-                                          Text('142',
+                                          Text(_temperatureValue.toString(),
                                               style: TextStyle(
                                                   fontWeight: FontWeight.bold,
                                                   fontStyle: FontStyle.italic,
@@ -224,13 +255,13 @@ class _MyHomePageState extends State<MyHomePage> {
                                   GaugeAnnotation(
                                     angle: 54,
                                     positionFactor: 1.1,
-                                    widget: Text('240',
+                                    widget: Text('50',
                                         style: TextStyle(fontSize: 14)),
                                   ),
                                 ],
                                 pointers: <GaugePointer>[
-                                  const RangePointer(
-                                    value: 142,
+                                  RangePointer(
+                                    value: _temperatureValue,
                                     width: 18,
                                     pointerOffset: -6,
                                     cornerStyle: CornerStyle.bothCurve,
@@ -244,7 +275,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     ]),
                                   ),
                                   MarkerPointer(
-                                    value: 136,
+                                    value: _temperatureValue - 1.5,
                                     color: Colors.white,
                                     markerType: MarkerType.circle,
                                   ),
@@ -297,6 +328,25 @@ class _MyHomePageState extends State<MyHomePage> {
                                         setState(() {
                                           _robotSpeed = value as double;
                                         });
+                                        String jsonString =
+                                            jsonEncode({'rbspeed': value});
+
+                                        // Convert string to Uint8Buffer
+                                        final payload = Uint8Buffer();
+                                        payload.addAll(utf8.encode(jsonString));
+                                        if (_client != null &&
+                                            _client.connectionStatus?.state ==
+                                                MqttConnectionState.connected &&
+                                            payload != null) {
+                                          _client.publishMessage(
+                                              '/tankspeedctl',
+                                              MqttQos.exactlyOnce,
+                                              payload);
+                                        } else {
+                                          print(
+                                              'MQTT client is not connected or payload is null');
+                                          // Handle the case where the client is not connected or payload is null
+                                        }
                                       },
                                       color: const Color(0xffFFFFFF),
                                       width: 24,
@@ -360,7 +410,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       MqttConnectionState.connected &&
                                   payload != null) {
                                 _client.publishMessage(
-                                    '/tank', MqttQos.exactlyOnce, payload);
+                                    '/tankctl', MqttQos.exactlyOnce, payload);
                               } else {
                                 print(
                                     'MQTT client is not connected or payload is null');
@@ -400,19 +450,19 @@ class _MyHomePageState extends State<MyHomePage> {
                                     final mqttReceivedMessages = snapshot.data
                                         as List<
                                             MqttReceivedMessage<MqttMessage?>>?;
-                                    final recMess = mqttReceivedMessages![0]
-                                        .payload as MqttPublishMessage;
 
-// Convert MqttByteBuffer to Uint8List
-                                    // Convert MqttByteBuffer to Uint8List
-                                    // Convert Uint8Buffer to Uint8List
-                                    Uint8Buffer buffer =
-                                        recMess.payload.message;
-                                    Uint8List message =
-                                        buffer.buffer.asUint8List();
+                                    if (mqttReceivedMessages![0].topic ==
+                                        'esp32/cam_0') {
+                                      final recMess = mqttReceivedMessages[0]
+                                          .payload as MqttPublishMessage;
+                                      Uint8Buffer buffer =
+                                          recMess.payload.message;
+                                      Uint8List message =
+                                          buffer.buffer.asUint8List();
+                                      decodeImage(message);
+                                    }
 
 // Separate the image decoding process
-                                    decodeImage(message);
 
                                     return ValueListenableBuilder<Image?>(
                                       valueListenable: _imageNotifier,
@@ -489,6 +539,24 @@ class _MyHomePageState extends State<MyHomePage> {
                                     setState(() {
                                       _camLight = value;
                                     });
+
+                                    String jsonString =
+                                        jsonEncode({'camlight': value});
+
+                                    // Convert string to Uint8Buffer
+                                    final payload = Uint8Buffer();
+                                    payload.addAll(utf8.encode(jsonString));
+                                    if (_client != null &&
+                                        _client.connectionStatus?.state ==
+                                            MqttConnectionState.connected &&
+                                        payload != null) {
+                                      _client.publishMessage('/camlightctl',
+                                          MqttQos.exactlyOnce, payload);
+                                    } else {
+                                      print(
+                                          'MQTT client is not connected or payload is null');
+                                      // Handle the case where the client is not connected or payload is null
+                                    }
                                   },
                                 ),
                               ],
@@ -534,7 +602,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                 showLabels: false,
                                 showTicks: false,
                                 radiusFactor: 0.8,
-                                maximum: 240,
+                                maximum: 10000,
                                 axisLineStyle: const AxisLineStyle(
                                     cornerStyle: CornerStyle.startCurve,
                                     thickness: 5),
@@ -544,16 +612,16 @@ class _MyHomePageState extends State<MyHomePage> {
                                       widget: Column(
                                         mainAxisSize: MainAxisSize.min,
                                         children: <Widget>[
-                                          Text('142',
+                                          Text(_gassValue.toString(),
                                               style: TextStyle(
                                                   fontWeight: FontWeight.bold,
                                                   fontStyle: FontStyle.italic,
-                                                  fontSize: 30)),
+                                                  fontSize: 24)),
                                           Padding(
                                             padding: const EdgeInsets.fromLTRB(
                                                 0, 2, 0, 0),
                                             child: Text(
-                                              '°C',
+                                              'ppm',
                                               style: TextStyle(
                                                   fontWeight: FontWeight.bold,
                                                   fontStyle: FontStyle.italic,
@@ -571,13 +639,13 @@ class _MyHomePageState extends State<MyHomePage> {
                                   GaugeAnnotation(
                                     angle: 54,
                                     positionFactor: 1.1,
-                                    widget: Text('240',
+                                    widget: Text('10000',
                                         style: TextStyle(fontSize: 14)),
                                   ),
                                 ],
                                 pointers: <GaugePointer>[
-                                  const RangePointer(
-                                    value: 142,
+                                  RangePointer(
+                                    value: _gassValue,
                                     width: 18,
                                     pointerOffset: -6,
                                     cornerStyle: CornerStyle.bothCurve,
@@ -591,7 +659,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     ]),
                                   ),
                                   MarkerPointer(
-                                    value: 136,
+                                    value: _gassValue - 250,
                                     color: Colors.white,
                                     markerType: MarkerType.circle,
                                   ),
@@ -639,11 +707,29 @@ class _MyHomePageState extends State<MyHomePage> {
                                     thickness: 16, color: Colors.transparent),
                                 markerPointers: <LinearMarkerPointer>[
                                   LinearShapePointer(
-                                      value: _robotSpeed,
+                                      value: _camSpeed,
                                       onChanged: (dynamic value) {
                                         setState(() {
-                                          _robotSpeed = value as double;
+                                          _camSpeed = value as double;
                                         });
+
+                                        String jsonString =
+                                            jsonEncode({'camspeed': value});
+
+                                        // Convert string to Uint8Buffer
+                                        final payload = Uint8Buffer();
+                                        payload.addAll(utf8.encode(jsonString));
+                                        if (_client != null &&
+                                            _client.connectionStatus?.state ==
+                                                MqttConnectionState.connected &&
+                                            payload != null) {
+                                          _client.publishMessage('/camspeedctl',
+                                              MqttQos.exactlyOnce, payload);
+                                        } else {
+                                          print(
+                                              'MQTT client is not connected or payload is null');
+                                          // Handle the case where the client is not connected or payload is null
+                                        }
                                       },
                                       color: const Color(0xffFFFFFF),
                                       width: 24,
@@ -707,7 +793,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       MqttConnectionState.connected &&
                                   payload != null) {
                                 _client.publishMessage(
-                                    '/cam', MqttQos.exactlyOnce, payload);
+                                    '/camctl', MqttQos.exactlyOnce, payload);
                               } else {
                                 print(
                                     'MQTT client is not connected or payload is null');
