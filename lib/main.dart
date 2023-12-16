@@ -134,8 +134,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
           // Update _temperatureValue and _gassValue
           setState(() {
-            _temperatureValue = payload['temperature'];
-            _gassValue = payload['gass'];
+            _temperatureValue = payload['temperature'].roundToDouble();
+            _gassValue = payload['gass'].toInt();
           });
         } catch (e) {
           print('Error processing message: $e');
