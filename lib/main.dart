@@ -62,6 +62,8 @@ class _MyHomePageState extends State<MyHomePage> {
   double _robotSpeed = 50.0;
   double _camSpeed = 15.0;
 
+  bool imavaiable = false;
+
   double _temperatureValue = 0;
 
   double _gassValue = 200;
@@ -160,11 +162,13 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void onConnected() {
     print("Client connection was successful");
+    imavaiable = true;
   }
 
   void onDisconnected() {
     print("Disconnected");
     _isConnected = false;
+    imavaiable = false;
   }
 
   void pong() {
@@ -180,11 +184,22 @@ class _MyHomePageState extends State<MyHomePage> {
     // Decode the base64 string into a Uint8List
     Uint8List bytes = base64Decode(base64String);
 
-    // Update the UI with the image
-    _imageNotifier.value = Image.memory(
-      bytes,
-      gaplessPlayback: true,
-    );
+    // Decode the image from the list of bytes
+    img.Image? image = img.decodeImage(bytes);
+
+    if (image != null) {
+      // Rotate the image by 180 degrees
+      img.Image rotatedImage = img.copyRotate(image, 180);
+
+      // Convert the image back to a list of bytes
+      Uint8List rotatedBytes = Uint8List.fromList(img.encodeJpg(rotatedImage));
+
+      // Update the UI with the image
+      _imageNotifier.value = Image.memory(
+        rotatedBytes,
+        gaplessPlayback: true,
+      );
+    }
   }
 
   @override
@@ -437,7 +452,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           height: 300,
                           width: 600,
                           alignment: Alignment.center,
-                          color: Colors.blue,
+                          color: imavaiable ? Colors.white : Colors.blue,
                           child: _isConnected
                               ? StreamBuilder(
                                   stream: _client.updates,
