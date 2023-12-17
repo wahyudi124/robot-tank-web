@@ -171,14 +171,18 @@ class _MyHomePageState extends State<MyHomePage> {
     print('Ping response client callback invoked');
   }
 
-  Future<void> decodeImage(Uint8List message) async {
-    Uint8List list = Uint8List.view(message.buffer);
-    img.Image jpegImage = img.decodeJpg(list) as img.Image;
-    print('img width = ${jpegImage.width}, height = ${jpegImage.height}');
+  Future<void> decodeImage(String base64String) async {
+    // Remove the 'data:image/jpg;base64,' prefix if it exists
+    if (base64String.startsWith('data:image/jpg;base64,')) {
+      base64String = base64String.split(',').last;
+    }
 
-    // Perbarui UI dengan gambar yang sudah siap
+    // Decode the base64 string into a Uint8List
+    Uint8List bytes = base64Decode(base64String);
+
+    // Update the UI with the image
     _imageNotifier.value = Image.memory(
-      img.encodeJpg(jpegImage) as Uint8List,
+      bytes,
       gaplessPlayback: true,
     );
   }
@@ -459,10 +463,12 @@ class _MyHomePageState extends State<MyHomePage> {
                                           recMess.payload.message;
                                       Uint8List message =
                                           buffer.buffer.asUint8List();
-                                      decodeImage(message);
+                                      String base64String =
+                                          String.fromCharCodes(message);
+                                      decodeImage(base64String);
                                     }
 
-// Separate the image decoding process
+                                    // Separate the image decoding process
 
                                     return ValueListenableBuilder<Image?>(
                                       valueListenable: _imageNotifier,
