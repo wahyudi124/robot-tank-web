@@ -80,7 +80,7 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _camLight = false;
   int _counter = 0;
   final MqttBrowserClient _client =
-      MqttBrowserClient('ws://103.84.207.210:8083/mqtt', '');
+      MqttBrowserClient('ws://203.194.114.228:8083/mqtt', '');
   bool _isConnected = false;
 
   void connect() async {
